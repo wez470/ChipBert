@@ -132,12 +132,12 @@ impl Emulator {
             },
             (0xF, vx, 5, 5) => {
                 for i in 0..(vx + 1) {
-                    self.ram[self.i + i] + self.regs[i];
+                    self.ram[(self.i + i) as usize] + self.regs[i as usize];
                 }
             },
             (0xF, vx, 6, 5) => {
                 for i in 0..(vx + 1) {
-                    self.regs[i] = self.ram[self.i + i];
+                    self.regs[i as usize] = self.ram[(self.i + i) as usize];
                 }
             },
             _ => unreachable!("Invalid instruction reached"),
