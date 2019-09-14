@@ -37,7 +37,9 @@ pub struct Emulator {
     screen: Box<[u8]>,
     input: Input,
     stack: Vec<u16>,
-    regs: [u8; 16]
+    regs: [u8; 16],
+    delay_timer: u8,
+    sound_timer: u8,
 }
 
 pub struct Input {}
@@ -52,6 +54,8 @@ impl Emulator {
             screen: vec![0; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
             input: Input{},
             regs: [0; 16],
+            delay_timer: 0,
+            sound_timer: 0,
         };
         for i in 0..FONT_LENGTH {
             e.ram[i + FONT_START] = FONTS[i]
@@ -113,6 +117,29 @@ impl Emulator {
             (0xB, _, _, _) => self.pc = self.regs[0] as u16 + inst & 0b1111_1111_1111,
             (0xC, vx, _, _) => self.regs[vx as usize] = random::<u8>() & (inst as u8),
             (0xD, vx, vy, n) => self.draw_screen(self.regs[vx as usize], self.regs[vy as usize], n as u8),
+            (0xE, vx, 9, 0xE) => unimplemented!("KEY EQUAL"),
+            (0xE, vx, 0xA, 1) => unimplemented!("KEY NOT EQUAL"),
+            (0xF, vx, 0, 7) => self.regs[vx as usize] = self.delay_timer,
+            (0xF, vx, 0, 0xA) => self.regs[vx as usize] = 0, // TODO: KEY,
+            (0xF, vx, 1, 5) => self.delay_timer = self.regs[vx as usize],
+            (0xF, vx, 1, 8) => self.sound_timer = self.regs[vx as usize],
+            (0xF, vx, 1, 0xE) => self.i += self.regs[vx as usize] as u16,
+            (0xF, vx, 2, 9) => self.i = FONT_START as u16 + self.regs[vx as usize] as u16,
+            (0xF, vx, 3, 3) => {
+                self.ram[self.i as usize] = (self.regs[vx as usize] >> 2) & 1;
+                self.ram[self.i as usize] = (self.regs[vx as usize] >> 1) & 1;
+                self.ram[self.i as usize] = self.regs[vx as usize] & 1
+            },
+            (0xF, vx, 5, 5) => {
+                for i in 0..(vx + 1) {
+                    self.ram[self.i + i] + self.regs[i];
+                }
+            },
+            (0xF, vx, 6, 5) => {
+                for i in 0..(vx + 1) {
+                    self.regs[i] = self.ram[self.i + i];
+                }
+            },
             _ => unreachable!("Invalid instruction reached"),
         }
 
