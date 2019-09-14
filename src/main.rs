@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use structopt::StructOpt;
-use std::time::Duration;
-use std::thread;
 use rand::random;
+use sdl2::event::Event;
 
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
+const WINDOW_SCALE: usize = 10;
 const RAM: usize = 4096;
 const ROM_START: usize = 0x200;
 const FONT_LENGTH: usize = 80;
@@ -27,6 +27,10 @@ const FONTS: [u8; FONT_LENGTH] = [
     0xE0, 0x90, 0x90, 0x90, 0xE0, // D
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
     0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+];
+const COLORS: [sdl2::pixels::Color; 2] = [
+    sdl2::pixels::Color { r: 0, g: 0, b: 0, a: 0xFF },
+    sdl2::pixels::Color { r: 255, g: 255, b: 255, a: 0xFF },
 ];
 
 pub struct Emulator {
@@ -68,7 +72,7 @@ impl Emulator {
 
     pub fn run(&mut self) {
         let inst = (self.ram[self.pc as usize] as u16) << 8 | self.ram[self.pc as usize + 1] as u16;
-        println!("PC=0x{:04X}: {:04X}", self.pc, inst);
+//        println!("PC=0x{:04X}: {:04X}", self.pc, inst);
         let nibbles =
             ((inst >> 12),
             (inst >> 8 & 0b1111),
@@ -132,7 +136,7 @@ impl Emulator {
             },
             (0xF, vx, 5, 5) => {
                 for i in 0..(vx + 1) {
-                    self.ram[(self.i + i) as usize] + self.regs[i as usize];
+                    self.ram[(self.i + i) as usize] = self.regs[i as usize];
                 }
             },
             (0xF, vx, 6, 5) => {
@@ -201,8 +205,54 @@ fn main() {
         .into_boxed_slice();
     let mut emulator = Emulator::new(rom);
 
-    while true {
+    let sdl = sdl2::init().expect("Failed to initialize SDL");
+    let sdl_video = sdl.video().expect("Failed to access SDL video subsystem");
+    let window = sdl_video
+        .window(
+            "Chip Bert",
+            (SCREEN_WIDTH * WINDOW_SCALE) as u32,
+            (SCREEN_HEIGHT * WINDOW_SCALE) as u32,
+        )
+        .build()
+        .expect("Failed to create SDL window");
+    let mut canvas = window.into_canvas().build().expect("Failed to get SDL window canvas");
+    let mut sdl_events = sdl.event_pump().expect("Failed to get SDL event pump");
+
+    'main: loop {
         emulator.run();
 //        thread::sleep(Duration::from_millis(250))
+
+        const BYTES_PER_PIXEL: usize = 4;
+        let mut image = [0u8; SCREEN_WIDTH * SCREEN_HEIGHT * BYTES_PER_PIXEL];
+
+        for tile_row in 0..SCREEN_HEIGHT {
+            for tile_col in 0..SCREEN_WIDTH {
+                let pixel_i = (tile_row * SCREEN_WIDTH + tile_col) * 4;
+                let color = COLORS[emulator.screen[tile_row * SCREEN_WIDTH + tile_col] as usize];
+                image[pixel_i + 2] = color.r;
+                image[pixel_i + 1] = color.g;
+                image[pixel_i + 0] = color.b;
+            }
+        }
+
+        let surface = sdl2::surface::Surface::from_data(
+            &mut image[..],
+            SCREEN_WIDTH as u32,
+            SCREEN_HEIGHT as u32,
+            (SCREEN_WIDTH * BYTES_PER_PIXEL) as u32,
+            sdl2::pixels::PixelFormatEnum::RGB888,
+        ).unwrap();
+        let texture_creator = canvas.texture_creator();
+        let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
+
+        canvas.copy(&texture, None, None).unwrap();
+        canvas.present();
+
+        for event in sdl_events.poll_iter() {
+            match event {
+                Event::Quit { .. } => break 'main,
+                _ => ()
+            }
+        }
     }
 }
