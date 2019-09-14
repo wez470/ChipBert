@@ -120,7 +120,9 @@ impl Emulator {
     }
 
     fn clear_screen(&mut self) {
-        unimplemented!("Clear screen")
+        for i in 0..self.screen.len() {
+            self.screen[i] = 0;
+        }
     }
 
     fn ret(&mut self) {
