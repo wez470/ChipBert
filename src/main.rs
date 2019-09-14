@@ -112,7 +112,7 @@ impl Emulator {
             (0xA, _, _, _) => self.i = inst & 0b1111_1111_1111,
             (0xB, _, _, _) => self.pc = self.regs[0] as u16 + inst & 0b1111_1111_1111,
             (0xC, vx, _, _) => self.regs[vx as usize] = random::<u8>() & (inst as u8),
-            (0xD, vx, vy, n) => println!("drawing sprite at x: {}, y: {}, height: {}", self.regs[vx as usize], self.regs[vy as usize], n),
+            (0xD, vx, vy, n) => self.draw_screen(self.regs[vx as usize], self.regs[vy as usize], n as u8),
             _ => unreachable!("Invalid instruction reached"),
         }
 
@@ -141,6 +141,18 @@ impl Emulator {
     fn cond(&mut self, cond: bool) {
         if cond {
             self.pc += 2;
+        }
+    }
+
+    fn draw_screen(&mut self, base_x: u8, base_y: u8, height: u8) {
+        println!("drawing sprite at x: {}, y: {}, height: {}", base_x, base_y, height);
+        for y_i in 0..height {
+            let y = (base_y + y_i) % SCREEN_HEIGHT as u8;
+            for x_i in 0..8 {
+                let x = (base_x + x_i) % SCREEN_WIDTH as u8;
+                let pixel_i = (self.ram[self.i as usize + y_i as usize] >> x_i) & 1;
+                self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] = pixel_i;
+            }
         }
     }
 }
