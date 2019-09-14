@@ -173,12 +173,14 @@ impl Emulator {
 
     fn draw_screen(&mut self, base_x: u8, base_y: u8, height: u8) {
         println!("drawing sprite at x: {}, y: {}, height: {}", base_x, base_y, height);
+        self.regs[0xF] = 0;
         for y_i in 0..height {
             let y = (base_y + y_i) % SCREEN_HEIGHT as u8;
             for x_i in 0..8 {
                 let x = (base_x + x_i) % SCREEN_WIDTH as u8;
                 let pixel_i = (self.ram[self.i as usize + y_i as usize] >> x_i) & 1;
-                self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] = pixel_i;
+                self.regs[0xF] |= (self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] == 1 && pixel_i == 1) as u8;
+                self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] ^= pixel_i;
             }
         }
     }
