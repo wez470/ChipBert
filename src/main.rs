@@ -1,8 +1,10 @@
 use std::path::PathBuf;
+use std::time::Instant;
 use structopt::StructOpt;
 use rand::random;
 use sdl2::event::Event;
 
+const NANOS_PER_TIMER_TICK: u128 = 16666666;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const WINDOW_SCALE: usize = 10;
@@ -218,9 +220,20 @@ fn main() {
     let mut canvas = window.into_canvas().build().expect("Failed to get SDL window canvas");
     let mut sdl_events = sdl.event_pump().expect("Failed to get SDL event pump");
 
+    let mut timer_val = Instant::now();
     'main: loop {
         emulator.run();
 //        thread::sleep(Duration::from_millis(250))
+
+        if timer_val.elapsed().as_nanos() >= NANOS_PER_TIMER_TICK {
+            if emulator.delay_timer > 0 {
+                emulator.delay_timer -= 1
+            }
+            if emulator.sound_timer > 0 {
+                emulator.sound_timer -= 1
+            }
+            timer_val = Instant::now();
+        }
 
         const BYTES_PER_PIXEL: usize = 4;
         let mut image = [0u8; SCREEN_WIDTH * SCREEN_HEIGHT * BYTES_PER_PIXEL];
