@@ -117,8 +117,8 @@ impl Emulator {
             (0xB, _, _, _) => self.pc = self.regs[0] as u16 + inst & 0b1111_1111_1111,
             (0xC, vx, _, _) => self.regs[vx as usize] = random::<u8>() & (inst as u8),
             (0xD, vx, vy, n) => self.draw_screen(self.regs[vx as usize], self.regs[vy as usize], n as u8),
-            (0xE, vx, 9, 0xE) => unimplemented!("KEY EQUAL"),
-            (0xE, vx, 0xA, 1) => unimplemented!("KEY NOT EQUAL"),
+            (0xE, vx, 9, 0xE) => {}, // TODO: KEY EQUAL
+            (0xE, vx, 0xA, 1) => {}, // TODO: KEY NOT EQUAL
             (0xF, vx, 0, 7) => self.regs[vx as usize] = self.delay_timer,
             (0xF, vx, 0, 0xA) => self.regs[vx as usize] = 0, // TODO: KEY,
             (0xF, vx, 1, 5) => self.delay_timer = self.regs[vx as usize],
@@ -172,12 +172,14 @@ impl Emulator {
     }
 
     fn draw_screen(&mut self, base_x: u8, base_y: u8, height: u8) {
-        println!("drawing sprite at x: {}, y: {}, height: {}", base_x, base_y, height);
+//        println!("drawing sprite at x: {}, y: {}, height: {}", base_x, base_y, height);
         self.regs[0xF] = 0;
         for y_i in 0..height {
-            let y = (base_y + y_i) % SCREEN_HEIGHT as u8;
+            let (res_y, _) = base_y.overflowing_add(y_i);
+            let y = res_y % SCREEN_HEIGHT as u8;
             for x_i in 0..8 {
-                let x = (base_x + x_i) % SCREEN_WIDTH as u8;
+                let (res_x, _) = base_x.overflowing_add(x_i);
+                let x = res_x % SCREEN_WIDTH as u8;
                 let pixel_i = (self.ram[self.i as usize + y_i as usize] >> x_i) & 1;
                 self.regs[0xF] |= (self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] == 1 && pixel_i == 1) as u8;
                 self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] ^= pixel_i;
@@ -201,6 +203,6 @@ fn main() {
 
     while true {
         emulator.run();
-        thread::sleep(Duration::from_millis(250))
+//        thread::sleep(Duration::from_millis(250))
     }
 }
