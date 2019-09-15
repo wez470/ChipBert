@@ -9,7 +9,7 @@ use std::thread::sleep;
 const NANOS_PER_TIMER_TICK: u128 = 16666666;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
-const WINDOW_SCALE: usize = 10;
+const WINDOW_SCALE: usize = 20;
 const RAM: usize = 4096;
 const ROM_START: usize = 0x200;
 const FONT_LENGTH: usize = 80;
@@ -76,7 +76,6 @@ impl Emulator {
 
     pub fn run(&mut self, pressed_button: Option<u8>) {
         let inst = (self.ram[self.pc as usize] as u16) << 8 | self.ram[self.pc as usize + 1] as u16;
-        println!("PC=0x{:04X}: {:04X}", self.pc, inst);
 
         if self.wait_for_input {
             match pressed_button {
@@ -89,6 +88,7 @@ impl Emulator {
                 None => return,
             }
         }
+//        println!("PC=0x{:04X}: {:04X}", self.pc, inst);
 
         let nibbles =
             ((inst >> 12),
@@ -97,10 +97,19 @@ impl Emulator {
             (inst & 0b1111));
         match nibbles {
             (0, 0, 0xE, 0) => self.clear_screen(),
-            (0, 0, 0xE, 0xE) => self.ret(),
+            (0, 0, 0xE, 0xE) => {
+                self.ret();
+                return;
+            },
             (0, _, _, _) => unimplemented!("CALL RCA 1802 program"),
-            (1, _, _, _) => self.jump(inst & 0b1111_1111_1111),
-            (2, _, _, _) => self.call(inst & 0b1111_1111_1111),
+            (1, _, _, _) => {
+                self.jump(inst & 0b1111_1111_1111);
+                return;
+            },
+            (2, _, _, _) => {
+                self.call(inst & 0b1111_1111_1111);
+                return;
+            },
             (3, vx, _, _) => self.cond(self.regs[vx as usize] == inst as u8),
             (4, vx, _, _) => self.cond(self.regs[vx as usize] != inst as u8),
             (5, vx, vy, 0) => self.cond(self.regs[vx as usize] == self.regs[vy as usize]),
@@ -134,8 +143,11 @@ impl Emulator {
                 self.regs[vx as usize] <<= 1;
             },
             (9, vx, vy, 0) => self.cond(self.regs[vx as usize] != self.regs[vy as usize]),
-            (0xA, _, _, _) => self.i = inst & 0b1111_1111_1111,
-            (0xB, _, _, _) => self.pc = self.regs[0] as u16 + inst & 0b1111_1111_1111,
+            (0xA, _, _, _) => self.i = inst & 0b1111_1111_1111, // 3E6
+            (0xB, _, _, _) => {
+                self.pc = self.regs[0] as u16 + inst & 0b1111_1111_1111;
+                return;
+            },
             (0xC, vx, _, _) => self.regs[vx as usize] = random::<u8>() & (inst as u8),
             (0xD, vx, vy, n) => self.draw_screen(self.regs[vx as usize], self.regs[vy as usize], n as u8),
             (0xE, vx, 9, 0xE) => {
@@ -149,18 +161,18 @@ impl Emulator {
                 }
             },
             (0xF, vx, 0, 7) => self.regs[vx as usize] = self.delay_timer,
-            (0xF, vx, 0, 0xA) => {
+            (0xF, _, 0, 0xA) => {
                 self.wait_for_input = true;
                 return;
             },
             (0xF, vx, 1, 5) => self.delay_timer = self.regs[vx as usize],
             (0xF, vx, 1, 8) => self.sound_timer = self.regs[vx as usize],
             (0xF, vx, 1, 0xE) => self.i += self.regs[vx as usize] as u16,
-            (0xF, vx, 2, 9) => self.i = FONT_START as u16 + self.regs[vx as usize] as u16,
+            (0xF, vx, 2, 9) => self.i = FONT_START as u16 +  5 * self.regs[vx as usize] as u16,
             (0xF, vx, 3, 3) => {
-                self.ram[self.i as usize] = (self.regs[vx as usize] >> 2) & 1;
-                self.ram[self.i as usize] = (self.regs[vx as usize] >> 1) & 1;
-                self.ram[self.i as usize] = self.regs[vx as usize] & 1
+                self.ram[self.i as usize] = self.regs[vx as usize] / 100;
+                self.ram[self.i as usize + 1] = (self.regs[vx as usize] % 100) / 10;
+                self.ram[self.i as usize + 2] = self.regs[vx as usize] % 10
             },
             (0xF, vx, 5, 5) => {
                 for i in 0..(vx + 1) {
@@ -178,6 +190,12 @@ impl Emulator {
         self.pc += 2;
     }
 
+//    fn dump_regs(&self) {
+//        for i in 0..0xF+1 {
+//            println!("v{}: {}", i, self.regs[i])
+//        }
+//    }
+
     fn clear_screen(&mut self) {
         for i in 0..self.screen.len() {
             self.screen[i] = 0;
@@ -193,7 +211,7 @@ impl Emulator {
     }
 
     fn call(&mut self, fn_addr: u16) {
-        self.stack.push(self.pc);
+        self.stack.push(self.pc + 2);
         self.pc = fn_addr;
     }
 
@@ -204,17 +222,15 @@ impl Emulator {
     }
 
     fn draw_screen(&mut self, base_x: u8, base_y: u8, height: u8) {
-//        println!("drawing sprite at x: {}, y: {}, height: {}", base_x, base_y, height);
+//        println!("drawing sprite at x: {}, y: {}, height: {}, i: {}", base_x, base_y, height, self.i);
         self.regs[0xF] = 0;
         for y_i in 0..height {
-            let (res_y, _) = base_y.overflowing_add(y_i);
-            let y = res_y % SCREEN_HEIGHT as u8;
+            let y = (base_y as usize + y_i as usize) % SCREEN_HEIGHT;
             for x_i in 0..8 {
-                let (res_x, _) = base_x.overflowing_add(x_i);
-                let x = res_x % SCREEN_WIDTH as u8;
-                let pixel_i = (self.ram[self.i as usize + y_i as usize] >> x_i) & 1;
-                self.regs[0xF] |= (self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] == 1 && pixel_i == 1) as u8;
-                self.screen[y as usize * SCREEN_WIDTH as usize + x as usize] ^= pixel_i;
+                let x = (base_x as usize + x_i as usize) % SCREEN_WIDTH;
+                let pixel_i = (self.ram[self.i as usize + y_i as usize] >> (7 - x_i)) & 1;
+                self.regs[0xF] |= self.screen[y * SCREEN_WIDTH + x] & pixel_i;
+                self.screen[y * SCREEN_WIDTH + x] ^= pixel_i;
             }
         }
     }
@@ -249,6 +265,7 @@ fn main() {
     let mut timer_val = Instant::now();
     let mut pressed_button = None;
     'main: loop {
+        sleep(Duration::from_millis(1));
         emulator.run(pressed_button);
 
         pressed_button = None;
