@@ -48,6 +48,7 @@ pub struct Emulator {
     regs: [u8; 16],
     delay_timer: u8,
     sound_timer: u8,
+    wait_for_input: bool,
 }
 
 impl Emulator {
@@ -62,6 +63,7 @@ impl Emulator {
             regs: [0; 16],
             delay_timer: 0,
             sound_timer: 0,
+            wait_for_input: false,
         };
         for i in 0..FONT_LENGTH {
             e.ram[i + FONT_START] = FONTS[i]
@@ -72,9 +74,22 @@ impl Emulator {
         e
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, pressed_button: Option<u8>) {
         let inst = (self.ram[self.pc as usize] as u16) << 8 | self.ram[self.pc as usize + 1] as u16;
         println!("PC=0x{:04X}: {:04X}", self.pc, inst);
+
+        if self.wait_for_input {
+            match pressed_button {
+                Some(button) => {
+                    self.regs[(inst >> 8 & 0b1111) as usize] = button;
+                    self.pc += 2;
+                    self.wait_for_input = false;
+                    return;
+                },
+                None => return,
+            }
+        }
+
         let nibbles =
             ((inst >> 12),
             (inst >> 8 & 0b1111),
@@ -134,7 +149,10 @@ impl Emulator {
                 }
             },
             (0xF, vx, 0, 7) => self.regs[vx as usize] = self.delay_timer,
-            (0xF, vx, 0, 0xA) => self.regs[vx as usize] = 0, // TODO: KEY PRESS WAIT,
+            (0xF, vx, 0, 0xA) => {
+                self.wait_for_input = true;
+                return;
+            },
             (0xF, vx, 1, 5) => self.delay_timer = self.regs[vx as usize],
             (0xF, vx, 1, 8) => self.sound_timer = self.regs[vx as usize],
             (0xF, vx, 1, 0xE) => self.i += self.regs[vx as usize] as u16,
@@ -229,9 +247,11 @@ fn main() {
     let mut sdl_events = sdl.event_pump().expect("Failed to get SDL event pump");
 
     let mut timer_val = Instant::now();
+    let mut pressed_button = None;
     'main: loop {
-        emulator.run();
-        sleep(Duration::from_millis(50));
+        emulator.run(pressed_button);
+
+        pressed_button = None;
 
         if timer_val.elapsed().as_nanos() >= NANOS_PER_TIMER_TICK {
             if emulator.delay_timer > 0 {
@@ -279,22 +299,70 @@ fn main() {
                         Mod::RGUIMOD;
                     if !keymod.intersects(modifiers) {
                         match keycode {
-                            Keycode::Num1 if !repeat => emulator.input[1] = true,
-                            Keycode::Num2 if !repeat => emulator.input[2] = true,
-                            Keycode::Num3 if !repeat => emulator.input[3] = true,
-                            Keycode::Num4 if !repeat => emulator.input[0xC] = true,
-                            Keycode::Q if !repeat => emulator.input[4] = true,
-                            Keycode::W if !repeat => emulator.input[5] = true,
-                            Keycode::E if !repeat => emulator.input[6] = true,
-                            Keycode::R if !repeat => emulator.input[0xD] = true,
-                            Keycode::A if !repeat => emulator.input[7] = true,
-                            Keycode::S if !repeat => emulator.input[8] = true,
-                            Keycode::D if !repeat => emulator.input[9] = true,
-                            Keycode::F if !repeat => emulator.input[0xE] = true,
-                            Keycode::Z if !repeat => emulator.input[0xA] = true,
-                            Keycode::X if !repeat => emulator.input[0] = true,
-                            Keycode::C if !repeat => emulator.input[0xB] = true,
-                            Keycode::V if !repeat => emulator.input[0xF] = true,
+                            Keycode::Num1 if !repeat => {
+                                emulator.input[1] = true;
+                                pressed_button = Some(1);
+                            },
+                            Keycode::Num2 if !repeat => {
+                                emulator.input[2] = true;
+                                pressed_button = Some(2);
+                            },
+                            Keycode::Num3 if !repeat => {
+                                emulator.input[3] = true;
+                                pressed_button = Some(3);
+                            },
+                            Keycode::Num4 if !repeat => {
+                                emulator.input[0xC] = true;
+                                pressed_button = Some(0xC);
+                            },
+                            Keycode::Q if !repeat => {
+                                emulator.input[4] = true;
+                                pressed_button = Some(4);
+                            },
+                            Keycode::W if !repeat => {
+                                emulator.input[5] = true;
+                                pressed_button = Some(5);
+                            },
+                            Keycode::E if !repeat => {
+                                emulator.input[6] = true;
+                                pressed_button = Some(6);
+                            },
+                            Keycode::R if !repeat => {
+                                emulator.input[0xD] = true;
+                                pressed_button = Some(0xD);
+                            },
+                            Keycode::A if !repeat => {
+                                emulator.input[7] = true;
+                                pressed_button = Some(7);
+                            },
+                            Keycode::S if !repeat => {
+                                emulator.input[8] = true;
+                                pressed_button = Some(8);
+                            },
+                            Keycode::D if !repeat => {
+                                emulator.input[9] = true;
+                                pressed_button = Some(9);
+                            },
+                            Keycode::F if !repeat => {
+                                emulator.input[0xE] = true;
+                                pressed_button = Some(0xE);
+                            },
+                            Keycode::Z if !repeat => {
+                                emulator.input[0xA] = true;
+                                pressed_button = Some(0xA);
+                            },
+                            Keycode::X if !repeat => {
+                                emulator.input[0] = true;
+                                pressed_button = Some(0);
+                            },
+                            Keycode::C if !repeat => {
+                                emulator.input[0xB] = true;
+                                pressed_button = Some(0xB);
+                            },
+                            Keycode::V if !repeat => {
+                                emulator.input[0xF] = true;
+                                pressed_button = Some(0xF);
+                            },
                             _ => {}
                         }
                     }
