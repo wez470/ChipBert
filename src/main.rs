@@ -1,8 +1,10 @@
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use structopt::StructOpt;
 use rand::random;
 use sdl2::event::Event;
+use sdl2::keyboard::{Keycode, Mod};
+use std::thread::sleep;
 
 const NANOS_PER_TIMER_TICK: u128 = 16666666;
 const SCREEN_WIDTH: usize = 64;
@@ -41,14 +43,12 @@ pub struct Emulator {
     i: u16,
     pc: u16,
     screen: Box<[u8]>,
-    input: Input,
+    input: [bool; 16],
     stack: Vec<u16>,
     regs: [u8; 16],
     delay_timer: u8,
     sound_timer: u8,
 }
-
-pub struct Input {}
 
 impl Emulator {
     pub fn new(rom: Box<[u8]>) -> Emulator {
@@ -58,7 +58,7 @@ impl Emulator {
             pc: ROM_START as u16,
             stack: Vec::new(),
             screen: vec![0; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(),
-            input: Input{},
+            input: [false; 16],
             regs: [0; 16],
             delay_timer: 0,
             sound_timer: 0,
@@ -74,7 +74,7 @@ impl Emulator {
 
     pub fn run(&mut self) {
         let inst = (self.ram[self.pc as usize] as u16) << 8 | self.ram[self.pc as usize + 1] as u16;
-//        println!("PC=0x{:04X}: {:04X}", self.pc, inst);
+        println!("PC=0x{:04X}: {:04X}", self.pc, inst);
         let nibbles =
             ((inst >> 12),
             (inst >> 8 & 0b1111),
@@ -123,10 +123,18 @@ impl Emulator {
             (0xB, _, _, _) => self.pc = self.regs[0] as u16 + inst & 0b1111_1111_1111,
             (0xC, vx, _, _) => self.regs[vx as usize] = random::<u8>() & (inst as u8),
             (0xD, vx, vy, n) => self.draw_screen(self.regs[vx as usize], self.regs[vy as usize], n as u8),
-            (0xE, vx, 9, 0xE) => {}, // TODO: KEY EQUAL
-            (0xE, vx, 0xA, 1) => {}, // TODO: KEY NOT EQUAL
+            (0xE, vx, 9, 0xE) => {
+                if self.input[self.regs[vx as usize] as usize] {
+                    self.pc += 2;
+                }
+            },
+            (0xE, vx, 0xA, 1) => {
+                if !self.input[self.regs[vx as usize] as usize] {
+                    self.pc += 2;
+                }
+            },
             (0xF, vx, 0, 7) => self.regs[vx as usize] = self.delay_timer,
-            (0xF, vx, 0, 0xA) => self.regs[vx as usize] = 0, // TODO: KEY,
+            (0xF, vx, 0, 0xA) => self.regs[vx as usize] = 0, // TODO: KEY PRESS WAIT,
             (0xF, vx, 1, 5) => self.delay_timer = self.regs[vx as usize],
             (0xF, vx, 1, 8) => self.sound_timer = self.regs[vx as usize],
             (0xF, vx, 1, 0xE) => self.i += self.regs[vx as usize] as u16,
@@ -223,7 +231,7 @@ fn main() {
     let mut timer_val = Instant::now();
     'main: loop {
         emulator.run();
-//        thread::sleep(Duration::from_millis(250))
+        sleep(Duration::from_millis(50));
 
         if timer_val.elapsed().as_nanos() >= NANOS_PER_TIMER_TICK {
             if emulator.delay_timer > 0 {
@@ -264,6 +272,61 @@ fn main() {
         for event in sdl_events.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'main,
+
+                Event::KeyDown { keycode: Some(keycode), keymod, repeat, .. } => {
+                    let modifiers = Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::LCTRLMOD |
+                        Mod::RCTRLMOD | Mod::LALTMOD | Mod::RALTMOD | Mod::LGUIMOD |
+                        Mod::RGUIMOD;
+                    if !keymod.intersects(modifiers) {
+                        match keycode {
+                            Keycode::Num1 if !repeat => emulator.input[1] = true,
+                            Keycode::Num2 if !repeat => emulator.input[2] = true,
+                            Keycode::Num3 if !repeat => emulator.input[3] = true,
+                            Keycode::Num4 if !repeat => emulator.input[0xC] = true,
+                            Keycode::Q if !repeat => emulator.input[4] = true,
+                            Keycode::W if !repeat => emulator.input[5] = true,
+                            Keycode::E if !repeat => emulator.input[6] = true,
+                            Keycode::R if !repeat => emulator.input[0xD] = true,
+                            Keycode::A if !repeat => emulator.input[7] = true,
+                            Keycode::S if !repeat => emulator.input[8] = true,
+                            Keycode::D if !repeat => emulator.input[9] = true,
+                            Keycode::F if !repeat => emulator.input[0xE] = true,
+                            Keycode::Z if !repeat => emulator.input[0xA] = true,
+                            Keycode::X if !repeat => emulator.input[0] = true,
+                            Keycode::C if !repeat => emulator.input[0xB] = true,
+                            Keycode::V if !repeat => emulator.input[0xF] = true,
+                            _ => {}
+                        }
+                    }
+                }
+
+                Event::KeyUp { keycode: Some(keycode), keymod, .. } => {
+                    let modifiers = Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::LCTRLMOD |
+                        Mod::RCTRLMOD | Mod::LALTMOD | Mod::RALTMOD | Mod::LGUIMOD |
+                        Mod::RGUIMOD;
+                    if !keymod.intersects(modifiers) {
+                        match keycode {
+                            Keycode::Num1 => emulator.input[1] = false,
+                            Keycode::Num2 => emulator.input[2] = false,
+                            Keycode::Num3 => emulator.input[3] = false,
+                            Keycode::Num4 => emulator.input[0xC] = false,
+                            Keycode::Q => emulator.input[4] = false,
+                            Keycode::W => emulator.input[5] = false,
+                            Keycode::E => emulator.input[6] = false,
+                            Keycode::R => emulator.input[0xD] = false,
+                            Keycode::A => emulator.input[7] = false,
+                            Keycode::S => emulator.input[8] = false,
+                            Keycode::D => emulator.input[9] = false,
+                            Keycode::F => emulator.input[0xE] = false,
+                            Keycode::Z => emulator.input[0xA] = false,
+                            Keycode::X => emulator.input[0] = false,
+                            Keycode::C => emulator.input[0xB] = false,
+                            Keycode::V => emulator.input[0xF] = false,
+                            _ => {}
+                        }
+                    }
+                }
+
                 _ => ()
             }
         }
