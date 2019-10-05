@@ -1,5 +1,5 @@
 [package]
-name = "ChipBert"
+name = "chip_bert"
 version = "0.1.0"
 authors = ["Weston Carlson <wcarlson@digitalocean.com>"]
 edition = "2018"
