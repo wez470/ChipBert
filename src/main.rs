@@ -1,11 +1,17 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 use structopt::StructOpt;
 use rand::random;
+use sdl2::EventPump;
 use sdl2::event::Event;
+use sdl2::render::Canvas;
+use sdl2::video::Window;
 use sdl2::keyboard::{Keycode, Mod};
 use std::thread::sleep;
 
+const TITLE: &str = "Chip Bert";
+const BYTES_PER_PIXEL: usize = 4;
 const NANOS_PER_TIMER_TICK: u128 = 16666666;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
@@ -234,6 +240,19 @@ impl Emulator {
             }
         }
     }
+
+    fn update_timers(&mut self, last_update_time: Instant) -> Instant {
+        if last_update_time.elapsed().as_nanos() >= NANOS_PER_TIMER_TICK {
+            if self.delay_timer > 0 {
+                self.delay_timer -= 1
+            }
+            if self.sound_timer > 0 {
+                self.sound_timer -= 1
+            }
+            return Instant::now();
+        }
+        return last_update_time
+    }
 }
 
 #[derive(StructOpt)]
@@ -253,7 +272,7 @@ fn main() {
     let sdl_video = sdl.video().expect("Failed to access SDL video subsystem");
     let window = sdl_video
         .window(
-            "Chip Bert",
+            TITLE,
             (SCREEN_WIDTH * WINDOW_SCALE) as u32,
             (SCREEN_HEIGHT * WINDOW_SCALE) as u32,
         )
@@ -262,125 +281,55 @@ fn main() {
     let mut canvas = window.into_canvas().build().expect("Failed to get SDL window canvas");
     let mut sdl_events = sdl.event_pump().expect("Failed to get SDL event pump");
 
+    run_emulator_loop(&mut emulator, &mut canvas, &mut sdl_events)
+}
+
+fn run_emulator_loop(emulator: &mut Emulator, canvas: &mut Canvas<Window>, sdl_events: &mut EventPump) -> () {
     let mut timer_val = Instant::now();
     let mut pressed_button = None;
+
+    let key_map: HashMap<Keycode, usize> =
+    [(Keycode::Num1, 1),
+     (Keycode::Num2, 2),
+     (Keycode::Num3, 3),
+     (Keycode::Num4, 0xC),
+     (Keycode::Q, 4),
+     (Keycode::W, 5),
+     (Keycode::E, 6),
+     (Keycode::R, 0xD),
+     (Keycode::A, 7),
+     (Keycode::S, 8),
+     (Keycode::D, 9),
+     (Keycode::F, 0xE),
+     (Keycode::Z, 0xA),
+     (Keycode::X, 0),
+     (Keycode::C, 0xB),
+     (Keycode::V, 0xF),].iter().cloned().collect();
+
     'main: loop {
+        // hacky rate limit of chip-8 run speed
         sleep(Duration::from_millis(1));
+
         emulator.run(pressed_button);
 
         pressed_button = None;
 
-        if timer_val.elapsed().as_nanos() >= NANOS_PER_TIMER_TICK {
-            if emulator.delay_timer > 0 {
-                emulator.delay_timer -= 1
-            }
-            if emulator.sound_timer > 0 {
-                emulator.sound_timer -= 1
-            }
-            timer_val = Instant::now();
-        }
+        timer_val = emulator.update_timers(timer_val);
 
-        const BYTES_PER_PIXEL: usize = 4;
-        let mut image = [0u8; SCREEN_WIDTH * SCREEN_HEIGHT * BYTES_PER_PIXEL];
-
-        for tile_row in 0..SCREEN_HEIGHT {
-            for tile_col in 0..SCREEN_WIDTH {
-                let pixel_i = (tile_row * SCREEN_WIDTH + tile_col) * 4;
-                let color = COLORS[emulator.screen[tile_row * SCREEN_WIDTH + tile_col] as usize];
-                image[pixel_i + 2] = color.r;
-                image[pixel_i + 1] = color.g;
-                image[pixel_i + 0] = color.b;
-            }
-        }
-
-        let surface = sdl2::surface::Surface::from_data(
-            &mut image[..],
-            SCREEN_WIDTH as u32,
-            SCREEN_HEIGHT as u32,
-            (SCREEN_WIDTH * BYTES_PER_PIXEL) as u32,
-            sdl2::pixels::PixelFormatEnum::RGB888,
-        ).unwrap();
-        let texture_creator = canvas.texture_creator();
-        let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
-
-        canvas.copy(&texture, None, None).unwrap();
-        canvas.present();
+        update_screen(emulator, canvas);
 
         for event in sdl_events.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'main,
 
-                Event::KeyDown { keycode: Some(keycode), keymod, repeat, .. } => {
+                Event::KeyDown { keycode: Some(keycode), keymod, .. } => {
                     let modifiers = Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::LCTRLMOD |
                         Mod::RCTRLMOD | Mod::LALTMOD | Mod::RALTMOD | Mod::LGUIMOD |
                         Mod::RGUIMOD;
                     if !keymod.intersects(modifiers) {
-                        match keycode {
-                            Keycode::Num1 if !repeat => {
-                                emulator.input[1] = true;
-                                pressed_button = Some(1);
-                            },
-                            Keycode::Num2 if !repeat => {
-                                emulator.input[2] = true;
-                                pressed_button = Some(2);
-                            },
-                            Keycode::Num3 if !repeat => {
-                                emulator.input[3] = true;
-                                pressed_button = Some(3);
-                            },
-                            Keycode::Num4 if !repeat => {
-                                emulator.input[0xC] = true;
-                                pressed_button = Some(0xC);
-                            },
-                            Keycode::Q if !repeat => {
-                                emulator.input[4] = true;
-                                pressed_button = Some(4);
-                            },
-                            Keycode::W if !repeat => {
-                                emulator.input[5] = true;
-                                pressed_button = Some(5);
-                            },
-                            Keycode::E if !repeat => {
-                                emulator.input[6] = true;
-                                pressed_button = Some(6);
-                            },
-                            Keycode::R if !repeat => {
-                                emulator.input[0xD] = true;
-                                pressed_button = Some(0xD);
-                            },
-                            Keycode::A if !repeat => {
-                                emulator.input[7] = true;
-                                pressed_button = Some(7);
-                            },
-                            Keycode::S if !repeat => {
-                                emulator.input[8] = true;
-                                pressed_button = Some(8);
-                            },
-                            Keycode::D if !repeat => {
-                                emulator.input[9] = true;
-                                pressed_button = Some(9);
-                            },
-                            Keycode::F if !repeat => {
-                                emulator.input[0xE] = true;
-                                pressed_button = Some(0xE);
-                            },
-                            Keycode::Z if !repeat => {
-                                emulator.input[0xA] = true;
-                                pressed_button = Some(0xA);
-                            },
-                            Keycode::X if !repeat => {
-                                emulator.input[0] = true;
-                                pressed_button = Some(0);
-                            },
-                            Keycode::C if !repeat => {
-                                emulator.input[0xB] = true;
-                                pressed_button = Some(0xB);
-                            },
-                            Keycode::V if !repeat => {
-                                emulator.input[0xF] = true;
-                                pressed_button = Some(0xF);
-                            },
-                            _ => {}
+                        if let Some(&val) = key_map.get(&keycode) {
+                            emulator.input[val] = true;
+                            pressed_button = Some(val as u8);
                         }
                     }
                 }
@@ -390,24 +339,8 @@ fn main() {
                         Mod::RCTRLMOD | Mod::LALTMOD | Mod::RALTMOD | Mod::LGUIMOD |
                         Mod::RGUIMOD;
                     if !keymod.intersects(modifiers) {
-                        match keycode {
-                            Keycode::Num1 => emulator.input[1] = false,
-                            Keycode::Num2 => emulator.input[2] = false,
-                            Keycode::Num3 => emulator.input[3] = false,
-                            Keycode::Num4 => emulator.input[0xC] = false,
-                            Keycode::Q => emulator.input[4] = false,
-                            Keycode::W => emulator.input[5] = false,
-                            Keycode::E => emulator.input[6] = false,
-                            Keycode::R => emulator.input[0xD] = false,
-                            Keycode::A => emulator.input[7] = false,
-                            Keycode::S => emulator.input[8] = false,
-                            Keycode::D => emulator.input[9] = false,
-                            Keycode::F => emulator.input[0xE] = false,
-                            Keycode::Z => emulator.input[0xA] = false,
-                            Keycode::X => emulator.input[0] = false,
-                            Keycode::C => emulator.input[0xB] = false,
-                            Keycode::V => emulator.input[0xF] = false,
-                            _ => {}
+                        if let Some(&val) = key_map.get(&keycode) {
+                            emulator.input[val] = false;
                         }
                     }
                 }
@@ -416,4 +349,31 @@ fn main() {
             }
         }
     }
+}
+
+fn update_screen(emulator: &Emulator, canvas: &mut Canvas<Window>) {
+    let mut image = [0u8; SCREEN_WIDTH * SCREEN_HEIGHT * BYTES_PER_PIXEL];
+
+    for tile_row in 0..SCREEN_HEIGHT {
+        for tile_col in 0..SCREEN_WIDTH {
+            let pixel_i = (tile_row * SCREEN_WIDTH + tile_col) * 4;
+            let color = COLORS[emulator.screen[tile_row * SCREEN_WIDTH + tile_col] as usize];
+            image[pixel_i + 2] = color.r;
+            image[pixel_i + 1] = color.g;
+            image[pixel_i + 0] = color.b;
+        }
+    }
+
+    let surface = sdl2::surface::Surface::from_data(
+        &mut image[..],
+        SCREEN_WIDTH as u32,
+        SCREEN_HEIGHT as u32,
+        (SCREEN_WIDTH * BYTES_PER_PIXEL) as u32,
+        sdl2::pixels::PixelFormatEnum::RGB888,
+    ).unwrap();
+
+    let texture_creator = canvas.texture_creator();
+    let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
+    canvas.copy(&texture, None, None).unwrap();
+    canvas.present();
 }
